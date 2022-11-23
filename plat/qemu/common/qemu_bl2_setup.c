@@ -19,9 +19,17 @@
 #include <lib/optee_utils.h>
 #include <lib/utils.h>
 #include <plat/common/platform.h>
+#if SPMD_SPM_AT_SEL2
+#include <lib/fconf/fconf.h>
+#include <lib/fconf/fconf_dyn_cfg_getter.h>
+#endif
 
 #include "qemu_private.h"
 
+#if SPMD_SPM_AT_SEL2
+/* Base address of fw_config received from BL1 */
+static uintptr_t config_base;
+#endif
 
 /* Data structure which holds the extents of the trusted SRAM for BL2 */
 static meminfo_t bl2_tzram_layout __aligned(CACHE_WRITEBACK_GRANULE);
@@ -29,6 +37,9 @@ static meminfo_t bl2_tzram_layout __aligned(CACHE_WRITEBACK_GRANULE);
 void bl2_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 			       u_register_t arg2, u_register_t arg3)
 {
+#if SPMD_SPM_AT_SEL2
+	config_base = (uintptr_t)arg0;
+#endif
 	meminfo_t *mem_layout = (void *)arg1;
 
 	/* Initialize the console to provide early debug support */
@@ -90,11 +101,25 @@ void bl2_platform_setup(void)
 
 void bl2_plat_arch_setup(void)
 {
+#if SPMD_SPM_AT_SEL2
+	const struct dyn_cfg_dtb_info_t *tb_fw_config_info;
+#endif
 	QEMU_CONFIGURE_BL2_MMU(bl2_tzram_layout.total_base,
 			      bl2_tzram_layout.total_size,
 			      BL_CODE_BASE, BL_CODE_END,
 			      BL_RO_DATA_BASE, BL_RO_DATA_END,
 			      BL_COHERENT_RAM_BASE, BL_COHERENT_RAM_END);
+
+#if SPMD_SPM_AT_SEL2
+	/* Fill the properties struct with the info from the config dtb */
+	fconf_populate("FW_CONFIG", config_base);
+
+	/* TB_FW_CONFIG was also loaded by BL1 */
+	tb_fw_config_info = FCONF_GET_PROPERTY(dyn_cfg, dtb, TB_FW_CONFIG_ID);
+	assert(tb_fw_config_info != NULL);
+
+	fconf_populate("TB_FW", tb_fw_config_info->config_addr);
+#endif
 }
 
 /*******************************************************************************
@@ -149,8 +174,18 @@ static int qemu_bl2_handle_post_image_load(unsigned int image_id)
 	bl_mem_params_node_t *paged_mem_params = NULL;
 #endif
 #if defined(SPD_spmd)
+#if SPMD_SPM_AT_SEL2
+        bl_mem_params_node_t *tos_fw_config_mem_params = NULL;
+        bl_mem_params_node_t *hw_config_mem_params = NULL;
+        unsigned int mode_rw = MODE_RW_64;
+
+        /* return if the image is SP image */
+        if ((bl_mem_params == NULL) && (image_id > MAX_IMAGE_IDS))
+                return err;
+#else
 	unsigned int mode_rw = MODE_RW_64;
 	uint64_t pagable_part = 0;
+#endif
 #endif
 
 	assert(bl_mem_params);
@@ -177,10 +212,25 @@ static int qemu_bl2_handle_post_image_load(unsigned int image_id)
 #endif
 
 #if defined(SPD_spmd)
+#if SPMD_SPM_AT_SEL2
+                mode_rw = bl_mem_params->ep_info.args.arg0;
+
+                tos_fw_config_mem_params = get_bl_mem_params_node(TOS_FW_CONFIG_ID);
+                assert(tos_fw_config_mem_params);
+
+                hw_config_mem_params = get_bl_mem_params_node(HW_CONFIG_ID);
+                assert(hw_config_mem_params);
+
+                bl_mem_params->ep_info.args.arg0 = tos_fw_config_mem_params->image_info.image_base;
+                bl_mem_params->ep_info.args.arg1 = hw_config_mem_params->image_info.image_base;
+                bl_mem_params->ep_info.args.arg2 = mode_rw;
+                bl_mem_params->ep_info.args.arg3 = ARM_PRELOADED_DTB_BASE;
+#else
 		bl_mem_params->ep_info.args.arg0 = ARM_PRELOADED_DTB_BASE;
 		bl_mem_params->ep_info.args.arg1 = pagable_part;
 		bl_mem_params->ep_info.args.arg2 = mode_rw;
 		bl_mem_params->ep_info.args.arg3 = 0;
+#endif
 #elif defined(SPD_opteed)
 		/*
 		 * OP-TEE expect to receive DTB address in x2.

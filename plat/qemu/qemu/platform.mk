@@ -4,8 +4,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
-# Use the GICv2 driver on QEMU by default
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+QEMU_USE_GIC_DRIVER	:= QEMU_GICV3
+else
+# Use the GICv2 driver on QEMU by default if SPMC not at SEL2
 QEMU_USE_GIC_DRIVER	:= QEMU_GICV2
+endif
 
 ifeq (${ARM_ARCH_MAJOR},7)
 # ARMv7 Qemu support in trusted firmware expects the Cortex-A15 model.
@@ -28,6 +32,9 @@ add-lib-optee 		:= 	yes
 endif
 ifeq ($(SPMC_OPTEE),1)
 $(eval $(call add_define,SPMC_OPTEE))
+add-lib-optee 		:= 	yes
+endif
+ifeq ($(SPMD_SPM_AT_SEL2),1)
 add-lib-optee 		:= 	yes
 endif
 
@@ -169,6 +176,22 @@ BL1_SOURCES		+=	drivers/io/io_encrypted.c
 BL2_SOURCES		+=	drivers/io/io_encrypted.c
 endif
 
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+# Firmware Configuration Framework sources
+include lib/fconf/fconf.mk
+
+DYN_CFG_SOURCES         +=      plat/arm/common/arm_dyn_cfg_helpers.c   \
+                                common/fdt_wrappers.c                   \
+                                common/uuid.c
+
+BL1_SOURCES             +=      ${DYN_CFG_SOURCES}
+BL1_SOURCES             +=      ${FCONF_SOURCES}
+BL1_SOURCES             +=      ${FCONF_DYN_SOURCES}
+BL2_SOURCES             +=      ${DYN_CFG_SOURCES}
+BL2_SOURCES             +=      ${FCONF_SOURCES}
+BL2_SOURCES             +=      ${FCONF_DYN_SOURCES}
+endif
+
 # Include GICv2 driver files
 include drivers/arm/gic/v2/gicv2.mk
 QEMU_GICV2_SOURCES	:=	${GICV2_SOURCES}			\
@@ -186,6 +209,9 @@ ifeq (${QEMU_USE_GIC_DRIVER}, QEMU_GICV2)
 QEMU_GIC_SOURCES	:=	${QEMU_GICV2_SOURCES}
 else ifeq (${QEMU_USE_GIC_DRIVER}, QEMU_GICV3)
 QEMU_GIC_SOURCES	:=	${QEMU_GICV3_SOURCES}
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+FVP_DT_PREFIX		:=	fvp-base-gicv3-psci
+endif
 else
 $(error "Incorrect GIC driver chosen for QEMU platform")
 endif
@@ -209,6 +235,49 @@ BL31_SOURCES		+=	lib/cpus/aarch64/aem_generic.S		\
 
 ifeq (${SPD},spmd)
 BL31_SOURCES		+=	plat/qemu/common/qemu_spmd_manifest.c
+endif
+endif
+
+# Add the FDT_SOURCES and options for Dynamic Config (only for Unix env)
+ifdef UNIX_MK
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+QEMU_HW_CONFIG_DTS	:=	fdts/${FVP_DT_PREFIX}.dts
+FDT_SOURCES		+=	$(addprefix plat/arm/board/qemu/fdts/,	\
+					${PLAT}_fw_config.dts		\
+					${PLAT}_tb_fw_config.dts	\
+					${PLAT}_soc_fw_config.dts	\
+					${PLAT}_nt_fw_config.dts	\
+				)
+
+QEMU_FW_CONFIG		:=	${BUILD_PLAT}/fdts/${PLAT}_fw_config.dtb
+QEMU_TB_FW_CONFIG	:=	${BUILD_PLAT}/fdts/${PLAT}_tb_fw_config.dtb
+QEMU_SOC_FW_CONFIG	:=	${BUILD_PLAT}/fdts/${PLAT}_soc_fw_config.dtb
+QEMU_NT_FW_CONFIG	:=	${BUILD_PLAT}/fdts/${PLAT}_nt_fw_config.dtb
+
+ifeq ($(QEMU_SPMC_MANIFEST_DTS),)
+QEMU_SPMC_MANIFEST_DTS	:=	plat/arm/board/qemu/fdts/${PLAT}_spmc_manifest.dts
+endif
+
+FDT_SOURCES		+=	${QEMU_SPMC_MANIFEST_DTS}
+QEMU_TOS_FW_CONFIG	:=	${BUILD_PLAT}/fdts/$(notdir $(basename ${QEMU_SPMC_MANIFEST_DTS})).dtb
+
+# Add the TOS_FW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_TOS_FW_CONFIG},--tos-fw-config,${QEMU_TOS_FW_CONFIG}))
+
+# Add the FW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_FW_CONFIG},--fw-config,${QEMU_FW_CONFIG}))
+# Add the TB_FW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_TB_FW_CONFIG},--tb-fw-config,${QEMU_TB_FW_CONFIG}))
+# Add the SOC_FW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_SOC_FW_CONFIG},--soc-fw-config,${QEMU_SOC_FW_CONFIG}))
+# Add the NT_FW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_NT_FW_CONFIG},--nt-fw-config,${QEMU_NT_FW_CONFIG}))
+
+FDT_SOURCES		+=	${QEMU_HW_CONFIG_DTS}
+$(eval QEMU_HW_CONFIG	:=	${BUILD_PLAT}/$(patsubst %.dts,%.dtb,$(QEMU_HW_CONFIG_DTS)))
+
+# Add the HW_CONFIG to FIP and specify the same to certtool
+$(eval $(call TOOL_ADD_PAYLOAD,${QEMU_HW_CONFIG},--hw-config,${QEMU_HW_CONFIG}))
 endif
 endif
 

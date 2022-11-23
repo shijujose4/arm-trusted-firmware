@@ -43,7 +43,7 @@
 
 /* IO devices */
 static const io_dev_connector_t *fip_dev_con;
-static uintptr_t fip_dev_handle;
+uintptr_t fip_dev_handle;
 static const io_dev_connector_t *memmap_dev_con;
 static uintptr_t memmap_dev_handle;
 static const io_dev_connector_t *sh_dev_con;
@@ -61,6 +61,16 @@ static const io_block_spec_t fip_block_spec = {
 static const io_uuid_spec_t bl2_uuid_spec = {
 	.uuid = UUID_TRUSTED_BOOT_FIRMWARE_BL2,
 };
+
+#if SPMD_SPM_AT_SEL2
+static const io_uuid_spec_t tb_fw_config_uuid_spec = {
+	.uuid = UUID_TB_FW_CONFIG,
+};
+
+static const io_uuid_spec_t fw_config_uuid_spec = {
+	.uuid = UUID_FW_CONFIG,
+};
+#endif
 
 static const io_uuid_spec_t bl31_uuid_spec = {
 	.uuid = UUID_EL3_RUNTIME_FIRMWARE_BL31,
@@ -81,6 +91,25 @@ static const io_uuid_spec_t bl32_extra2_uuid_spec = {
 static const io_uuid_spec_t bl33_uuid_spec = {
 	.uuid = UUID_NON_TRUSTED_FIRMWARE_BL33,
 };
+
+#if SPMD_SPM_AT_SEL2
+static const io_uuid_spec_t hw_config_uuid_spec = {
+	.uuid = UUID_HW_CONFIG,
+};
+
+static const io_uuid_spec_t soc_fw_config_uuid_spec = {
+	.uuid = UUID_SOC_FW_CONFIG,
+};
+
+static const io_uuid_spec_t tos_fw_config_uuid_spec = {
+	.uuid = UUID_TOS_FW_CONFIG,
+};
+
+static const io_uuid_spec_t nt_fw_config_uuid_spec = {
+	.uuid = UUID_NT_FW_CONFIG,
+};
+
+#endif
 
 #if TRUSTED_BOARD_BOOT
 static const io_uuid_spec_t tb_fw_cert_uuid_spec = {
@@ -177,7 +206,7 @@ static const io_file_spec_t sh_file_spec[] = {
 #endif /* TRUSTED_BOARD_BOOT */
 };
 
-static int open_fip(const uintptr_t spec);
+int open_fip(const uintptr_t spec);
 static int open_memmap(const uintptr_t spec);
 #ifndef DECRYPTION_SUPPORT_none
 static int open_enc_fip(const uintptr_t spec);
@@ -190,7 +219,7 @@ struct plat_io_policy {
 };
 
 /* By default, ARM platforms load images from the FIP */
-static const struct plat_io_policy policies[] = {
+struct plat_io_policy policies[MAX_NUMBER_IDS] = {
 	[FIP_IMAGE_ID] = {
 		&memmap_dev_handle,
 		(uintptr_t)&fip_block_spec,
@@ -206,6 +235,18 @@ static const struct plat_io_policy policies[] = {
 		(uintptr_t)&bl2_uuid_spec,
 		open_fip
 	},
+#if SPMD_SPM_AT_SEL2
+	[TB_FW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&tb_fw_config_uuid_spec,
+		open_fip
+	},
+	[FW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&fw_config_uuid_spec,
+		open_fip
+	},
+#endif
 #if ENCRYPT_BL31 && !defined(DECRYPTION_SUPPORT_none)
 	[BL31_IMAGE_ID] = {
 		&enc_dev_handle,
@@ -257,6 +298,28 @@ static const struct plat_io_policy policies[] = {
 		(uintptr_t)&bl33_uuid_spec,
 		open_fip
 	},
+#if SPMD_SPM_AT_SEL2
+	[HW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&hw_config_uuid_spec,
+		open_fip
+	},
+	[SOC_FW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&soc_fw_config_uuid_spec,
+		open_fip
+	},
+	[TOS_FW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&tos_fw_config_uuid_spec,
+		open_fip
+	},
+	[NT_FW_CONFIG_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&nt_fw_config_uuid_spec,
+		open_fip
+	},
+#endif
 #if TRUSTED_BOARD_BOOT
 	[TRUSTED_BOOT_FW_CERT_ID] = {
 		&fip_dev_handle,
@@ -301,7 +364,7 @@ static const struct plat_io_policy policies[] = {
 #endif /* TRUSTED_BOARD_BOOT */
 };
 
-static int open_fip(const uintptr_t spec)
+int open_fip(const uintptr_t spec)
 {
 	int result;
 	uintptr_t local_image_handle;
