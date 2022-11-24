@@ -85,10 +85,99 @@ static void update_dt(void)
 		ERROR("Failed to pack Device Tree at %p: error %d\n", fdt, ret);
 }
 
+#if SPMD_SPM_AT_SEL2
+/*
+ * BL2 utility function to initialize dynamic configuration specified by
+ * FW_CONFIG. Populate the bl_mem_params_node_t of other FW_CONFIGs if
+ * specified in FW_CONFIG.
+ */
+void qemu_bl2_dyn_cfg_init(void)
+{
+	unsigned int i;
+	bl_mem_params_node_t *cfg_mem_params = NULL;
+	uintptr_t image_base;
+	uint32_t image_size;
+	const unsigned int config_ids[] = {
+			HW_CONFIG_ID,
+			SOC_FW_CONFIG_ID,
+			NT_FW_CONFIG_ID,
+			TOS_FW_CONFIG_ID
+	};
+
+	const struct dyn_cfg_dtb_info_t *dtb_info;
+
+	/* Iterate through all the fw config IDs */
+	for (i = 0; i < ARRAY_SIZE(config_ids); i++) {
+		cfg_mem_params = get_bl_mem_params_node(config_ids[i]);
+		if (cfg_mem_params == NULL) {
+			INFO("%s config_id %d in bl_mem_params_node\n",
+				"Couldn't find", config_ids[i]);
+			continue;
+		}
+
+		/* Get the config load address and size from FW_CONFIG */
+		dtb_info = FCONF_GET_PROPERTY(dyn_cfg, dtb, config_ids[i]);
+		if (dtb_info == NULL) {
+			INFO("%sconfig_id %d load info in FW_CONFIG\n",
+				"Couldn't find ", config_ids[i]);
+			continue;
+		}
+
+		image_base = dtb_info->config_addr;
+		image_size = dtb_info->config_max_size;
+
+		/*
+		 * Do some runtime checks on the load addresses of soc_fw_config,
+		 * tos_fw_config, nt_fw_config. This is not a comprehensive check
+		 * of all invalid addresses but to prevent trivial porting errors.
+		 */
+		if (config_ids[i] != HW_CONFIG_ID) {
+
+			if (check_uptr_overflow(image_base, image_size)) {
+				continue;
+			}
+#ifdef	BL31_BASE
+			/* Ensure the configs don't overlap with BL31 */
+			if ((image_base >= BL31_BASE) &&
+			    (image_base <= BL31_LIMIT)) {
+				continue;
+			}
+#endif
+			/* Ensure the configs are loaded in a valid address */
+			if (image_base < BL_RAM_BASE) {
+				continue;
+			}
+#ifdef BL32_BASE
+			/*
+			 * If BL32 is present, ensure that the configs don't
+			 * overlap with it.
+			 */
+			if ((image_base >= BL32_BASE) &&
+			    (image_base <= BL32_LIMIT)) {
+				continue;
+			}
+#endif
+		}
+
+		cfg_mem_params->image_info.image_base = image_base;
+		cfg_mem_params->image_info.image_max_size = (uint32_t)image_size;
+
+		/*
+		 * Remove the IMAGE_ATTRIB_SKIP_LOADING attribute from
+		 * HW_CONFIG or FW_CONFIG nodes
+		 */
+		cfg_mem_params->image_info.h.attr &= ~IMAGE_ATTRIB_SKIP_LOADING;
+	}
+}
+#endif
+
 void bl2_platform_setup(void)
 {
 	security_setup();
 	update_dt();
+#if SPMD_SPM_AT_SEL2
+	qemu_bl2_dyn_cfg_init();
+#endif
 
 	/* TODO Initialize timer */
 }

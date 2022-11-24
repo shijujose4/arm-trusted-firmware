@@ -59,4 +59,7 @@ void bl1_plat_arch_setup(void)
 void bl1_platform_setup(void)
 {
 	plat_qemu_io_setup();
+#if SPMD_SPM_AT_SEL2
+	qemu_bl1_platform_setup();
+#endif
 }

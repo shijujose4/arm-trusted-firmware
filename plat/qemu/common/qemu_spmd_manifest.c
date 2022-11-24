@@ -20,7 +20,7 @@ int plat_spm_core_manifest_load(spmc_manifest_attribute_t *manifest,
 	assert(manifest != NULL);
 
 	manifest->major_version = 1;
-	manifest->minor_version = 0;
+	manifest->minor_version = 1;
 	manifest->exec_state = ep_info->args.arg2;
 	manifest->load_address = BL32_BASE;
 	manifest->entrypoint = BL32_BASE;

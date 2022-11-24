@@ -140,6 +140,9 @@ BL1_SOURCES		+=	drivers/io/io_semihosting.c		\
 				${PLAT_QEMU_COMMON_PATH}/qemu_io_storage.c		\
 				${PLAT_QEMU_COMMON_PATH}/${ARCH}/plat_helpers.S	\
 				${PLAT_QEMU_COMMON_PATH}/qemu_bl1_setup.c
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+BL1_SOURCES             +=	${PLAT_QEMU_COMMON_PATH}/qemu_bl1_platform_setup.c
+endif
 
 ifeq (${ARM_ARCH_MAJOR},8)
 BL1_SOURCES		+=	lib/cpus/aarch64/aem_generic.S		\
@@ -166,6 +169,10 @@ BL2_SOURCES		+=	drivers/io/io_semihosting.c		\
 				common/fdt_fixup.c					\
 				common/fdt_wrappers.c					\
 				common/desc_image_load.c
+
+ifeq ($(SPMD_SPM_AT_SEL2),1)
+BL2_SOURCES             +=     ${PLAT_QEMU_COMMON_PATH}/fconf/qemu_fconf_sp.c
+endif
 
 ifeq ($(add-lib-optee),yes)
 BL2_SOURCES		+=	lib/optee/optee_utils.c

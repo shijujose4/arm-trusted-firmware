@@ -48,4 +48,7 @@ int qemu_set_nt_fw_info(
 			size_t log_size,
 			uintptr_t *ns_log_addr);
 
+#if SPMD_SPM_AT_SEL2
+void qemu_bl1_platform_setup(void);
+#endif
 #endif /* QEMU_PRIVATE_H */
